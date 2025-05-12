@@ -1,0 +1,207 @@
+---
+title: "*eDNA* downstream analysis with PhyloSeq"
+author: "Laurent Falquet"
+date: "May 9th, 2025"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    toc_collapsed: false
+    toc_depth: 3
+    number_sections: true
+    theme: lumen
+    highlight: tango
+---
+```{css, echo=FALSE}
+.title, .author, .date {
+  text-align: center;
+}
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# PhyloSeq setting
+```{r expsetting, echo=TRUE}
+#BiocManager::install("phyloseq")
+
+options(conflicts.policy = list(warn = FALSE)) #this line removes all warnings of function masking
+library(phyloseq, quietly = TRUE)
+library(Biostrings, quietly = TRUE)
+library(ggplot2, quietly = TRUE)
+library(magrittr, quietly = TRUE)
+library(vegan, quietly = TRUE)
+theme_set(theme_bw())
+
+#CHANGE PATH according to your settings
+setwd("~/Desktop/eDNAworkshop2024")
+samdf <- read.delim("PRJNA256993_SraRunTable.txt")
+rownames(samdf)<-samdf$Run
+samdf<-samdf[,-1]
+
+#convert Collection_Date to a "date"
+samdf$Collection_Date<-as.Date(samdf$Collection_Date, "%d.%m.%Y") %>% format("20%y%m%d") %>% as.Date("%Y%m%d")
+
+#read RDS data 
+seqtab2.nochim <- readRDS("seqtab2.nochim.rds")
+taxa <- readRDS("taxa.rds")
+
+#build phyloseq obj without tree
+ps <- phyloseq(otu_table(seqtab2.nochim, taxa_are_rows=FALSE), 
+               sample_data(samdf), 
+               tax_table(taxa))
+
+#verify the phyloseq object
+ps
+```
+
+
+# rarefaction curves & richness plots
+```{r curves, tidy=TRUE, tidy.opts=list(arrow=TRUE, indent=2), echo=TRUE}
+
+#plotting the rarefaction curve is a quality check to verify that we reached saturation of the sampling
+rarecurve(data.frame(otu_table(ps, taxa_are_rows = 1)), step=100, col="blue", lwd=2, ylab="ASVs", main="Rarefaction Curve for all samples")
+
+#When is the saturation reached?
+
+#extract ASV sequences and add them to the phyloseq object renaming the ASVs
+dna <- Biostrings::DNAStringSet(taxa_names(ps))
+names(dna) <- taxa_names(ps)
+ps <- merge_phyloseq(ps, dna)
+taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
+
+
+#Now we check the alpha diversity by plotting different richness indices either by Depth or by Fraction vs the position along the river
+plot_richness(ps, x="pos_km", color="factor(Depth)", measures=c("Shannon", "Simpson", "Chao1"))
+plot_richness(ps, x="pos_km", color="factor(Fraction)", measures=c("Shannon", "Simpson", "Chao1"))
+
+#Can you see an effect?
+
+```
+
+# Shannon plot with regression
+
+```{r Shannon, tidy=TRUE, tidy.opts=list(arrow=TRUE, indent=2), echo=TRUE}
+
+#OK we will focus on the Shannon diversity, but plotting the regression line by Fraction size 
+ps_alpha_div <- estimate_richness(ps, split = TRUE, measure = "Shannon")
+sample_metadata = data.frame(sample_data(ps))
+ps_alpha_div$Fraction = sample_metadata$Fraction[match(rownames(ps_alpha_div), rownames(sample_metadata))]
+ps_alpha_div$pos_km = sample_metadata$pos_km[match(rownames(ps_alpha_div), rownames(sample_metadata))]
+
+ps_alpha_small<-ps_alpha_div[ps_alpha_div$Fraction == '0.2',]
+ps_alpha_large<-ps_alpha_div[ps_alpha_div$Fraction > '0.2',]
+visuals = rbind(ps_alpha_small,ps_alpha_large)
+
+#plot the regressions with confidence intervals
+p3 <- ggplot(visuals, aes(x=pos_km, y=Shannon, group=visuals$Fraction, color=factor(visuals$Fraction))) +
+  geom_point() +
+  geom_smooth(data=visuals, method=lm , aes(x=pos_km, y=Shannon, group=visuals$Fraction, color=factor(visuals$Fraction)), fill="#99b3a2", se=TRUE, size=1) +
+  labs(colour = "Fraction")
+p3
+
+#Do you see a clear separation of the Fraction?
+
+```
+
+# Beta diversity and barplots
+
+```{r Beta, tidy=TRUE, tidy.opts=list(arrow=TRUE, indent=2), echo=TRUE}
+
+#Transform data to proportions as appropriate for Bray-Curtis distances
+ps.prop <- transform_sample_counts(ps, function(otu) otu/(sum(otu)+1))
+ord.nmds.bray <- ordinate(ps.prop, method="NMDS", distance="bray")
+sample_data(ps.prop)$Fraction=as.character(sample_data(ps.prop)$Fraction)
+plot_ordination(ps.prop, ord.nmds.bray, color="Fraction", title="Bray NMDS") + geom_point(size=3)
+
+#Data exploration shows no clear separation
+
+#Now we try to plot the Genus abundance by sample keeping only the first 20 most abundant taxa.
+top20 <- names(sort(taxa_sums(ps), decreasing=TRUE))[1:20]
+ps.top20 <- transform_sample_counts(ps, function(OTU) OTU/(sum(OTU)+1))
+ps.top20 <- prune_taxa(top20, ps.top20)
+plot_bar(ps.top20, x="BioSample", fill="Genus") + geom_bar(aes(color=Genus, fill=Genus), stat="identity", position="stack")
+
+#Many samples don't contain one of the 20 most abundant taxa!
+#However some taxa are typical of fresh water (Acinetobacter, Flavobacter, Rhodoluna, Limnohabitans, Pseudarcicella, Sphingorhabdus) or sludge (Luteolibacter)
+
+
+#plot Phylum abundance of first 1000 most abundant taxa 
+top1000 <- names(sort(taxa_sums(ps), decreasing=TRUE))[1:1000]
+ps.top1000 <- transform_sample_counts(ps, function(OTU) OTU/(sum(OTU)+1))
+ps.top1000 <- prune_taxa(top1000, ps.top1000)
+plot_bar(ps.top1000, x="BioSample", fill="Phylum") + geom_bar(aes(color=Phylum, fill=Phylum), stat="identity", position="stack") 
+
+#Are there differences?
+
+``` 
+
+# phylogeo localisation
+```{r phylogeo, tidy=TRUE, tidy.opts=list(arrow=TRUE, indent=2), echo=TRUE}
+
+#What about the geographic localisation of the samples?
+#Here we will use a package to map the sample coordinates to geographic maps.
+
+#http://zachcp.github.io/phylogeo/
+devtools::install_github("zachcp/phylogeo")
+library(gridExtra, quietly = TRUE)
+library(phylogeo, quietly = TRUE)
+
+#map for each country
+map_phyloseq(ps, region=c("Germany"))
+map_phyloseq(ps, region=c("Austria"))
+map_phyloseq(ps, region=c("Slovakia"))
+map_phyloseq(ps, region=c("Hungary"))
+map_phyloseq(ps, region=c("Croatia"))
+map_phyloseq(ps, region=c("Serbia"))
+map_phyloseq(ps, region=c("Bulgaria"))
+map_phyloseq(ps, region=c("Romania"))
+
+#As this is not practical and frozen, we will map on a leaflet map similar to googlemaps
+htmlmap_phyloseq(ps, size=3, color="red") #color="geo_loc_name_country")
+
+#we can also color by country 
+htmlmap_phyloseq(ps, size=10, color="geo_loc_name_country")
+
+```
+
+
+# LEfSe analysis
+```{r LEfSe, tidy=TRUE, tidy.opts=list(arrow=TRUE, indent=2), echo=TRUE}
+
+#Can we identify taxa that are specific for the two fractions?
+#We will use LEfSe (Linear discriminant analysis Effect Size) to assess possible differences
+
+#BiocManager::install("microbiomeMarker") #if needed
+library(microbiomeMarker, quietly = TRUE)
+
+sample_data(ps)$Fraction=as.character(sample_data(ps)$Fraction)
+lef_out<-microbiomeMarker::run_lefse(ps, group="Fraction", taxa_rank="Genus")
+microbiomeMarker::plot_ef_bar(lef_out)
+
+#Hey some taxa are known in lake, river or sea (CL500-29 marine group, halioglobus, polynucleobacter) or sediment water (gemmatimonas, opitutus, brevundimonas, ilumatobacter, sediminibacterium, solitalea) and even some potential pathogens (roseomonas)...
+
+#Also typical of human activity, the hgcl-clade group found in areas associated with urban and industrial activities.
+
+```
+
+# Conclusion
+
+Several tools were introduced to analyse 16S amplicon sequences from different samples along 2600km of the Danube river. 
+The first part related to processing of the read data, QC, cleaning, filtering, error correction, merging, and taxonomy assignment.
+The second part related to alpha diversity, beta diversity, various plots, geographic localisation, and linear discriminant analysis to highlight some interesting differences and taxas.
+
+
+# Session infos
+```{r}
+sessionInfo()
+```
+
+
+```{r}
+knitr::knit_exit()
+```
+
+
+

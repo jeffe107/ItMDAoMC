@@ -1,0 +1,10 @@
+sample,group,short_reads_1,short_reads_2,long_reads
+ERR2143758,0,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143758/ERR2143758_1.fastq.gz,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143758/ERR2143758_2.fastq.gz,,
+ERR2143759,0,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143759/ERR2143759_1.fastq.gz,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143759/ERR2143759_2.fastq.gz,,
+ERR2143760,0,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143760/ERR2143760_1.fastq.gz,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143760/ERR2143760_2.fastq.gz,,
+ERR2143771,1,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143771/ERR2143771_1.fastq.gz,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143771/ERR2143771_2.fastq.gz,,
+ERR2143772,1,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143772/ERR2143772_1.fastq.gz,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143772/ERR2143772_2.fastq.gz,,
+ERR2143774,1,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143774/ERR2143774_1.fastq.gz,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143774/ERR2143774_2.fastq.gz,,
+ERR2143769,2,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143769/ERR2143769_1.fastq.gz,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143769/ERR2143769_2.fastq.gz,,
+ERR2143770,2,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143770/ERR2143770_1.fastq.gz,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143770/ERR2143770_2.fastq.gz,,
+ERR2143773,2,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143773/ERR2143773_1.fastq.gz,/data/projects/p774_MARSD/01_workshop/metagenomics/data/ERR2143773/ERR2143773_2.fastq.gz,,

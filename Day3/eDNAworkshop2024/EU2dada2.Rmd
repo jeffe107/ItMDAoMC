@@ -1,0 +1,218 @@
+---
+title: "*eDNA* example analysis with DADA2"
+author: "Laurent Falquet"
+date: "May 9th, 2025"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    toc_collapsed: false
+    toc_depth: 3
+    number_sections: true
+    theme: lumen
+    highlight: tango
+---
+```{css, echo=FALSE}
+.title, .author, .date {
+  text-align: center;
+}
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Welcome to this eDNA tutorial.
+
+You will be using a dataset extracted from a study of the bacterial diversity along the Danube river. See publication: https://ami-journals.onlinelibrary.wiley.com/doi/10.1111/1462-2920.12886
+
+The dataset provided is a subset with only 24 samples to cope with the schedule of the tutorial. The samples were amplified with primers primer Bakt_341F and Bakt_805R around V3-V4 region. The metadata is shown below.
+
+**Part I**
+
+The first part follow steps for processing of the Illumina reads 250bp PE, QC, cleaning, filtering, error correction, merging, and taxonomy assignment. For this purpose you will be using the DADA2 pipeline as described here: https://benjjneb.github.io/dada2/tutorial.html
+
+**Part II**
+
+The result files will then be used in a second part for the downstream analysis with alpha diversity, beta diversity, various plots, geographic localisation, and linear discriminant analysis to highlight some interesting differences and taxas.
+
+Let's start!
+
+
+
+# Experimental setting
+```{r expsetting, echo=TRUE}
+
+options(conflicts.policy = list(warn = FALSE)) #this line removes all warnings of function masking
+library(dada2)
+packageVersion("dada2")
+
+#change the PATH according to your setting
+setwd("~/Desktop/eDNAworkshop2024")
+path <- "~/Desktop/eDNAworkshop2024/EU2cleanreads"
+list.files(path)
+
+# Metadata available
+design_info<-read.table("PRJNA256993_SraRunTable.txt", sep="\t", header=TRUE)
+knitr::kable(design_info[seq(1,12),c(3,7,6,9,10,11,8)], format="html", align=rep('c', 10))
+
+# Forward and reverse fastq filenames have format: SAMPLENAME_1trim.fastq.gz and SAMPLENAME_2trim.fastq.gz
+fnFs <- sort(list.files(path, pattern="_1trim.fastq.gz", full.names = TRUE))
+fnRs <- sort(list.files(path, pattern="_2trim.fastq.gz", full.names = TRUE))
+
+# Extract sample names, assuming filenames have format: SAMPLENAME_XXX
+sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
+
+```
+
+
+# Data QC: FastQC
+```{r QC, tidy=TRUE, tidy.opts=list(arrow=TRUE, indent=2), echo=TRUE}
+
+#now we plot the QC of the first two Forward and Reverse reads
+plotQualityProfile(fnFs[1:2])
+plotQualityProfile(fnRs[1:2])
+
+#one can see that the QC plot show good quality for Forward reads and a lower quality for Reverse reads after position 230.
+
+```
+
+# Filtering and truncation of reads
+```{r Filtering, tidy=TRUE, tidy.opts=list(arrow=TRUE, indent=2), echo=TRUE}
+# Filter and place filtered files in filtered/ subdirectory
+filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
+names(filtFs) <- sample.names
+names(filtRs) <- sample.names
+
+#We’ll use standard filtering parameters: maxN=0 (DADA2 requires no Ns), truncQ=2, rm.phix=TRUE and maxEE=2. The maxEE parameter sets the maximum number of “expected errors” allowed in a read, which is a better filter than simply averaging quality scores.
+
+#In our case we don't truncate the reads (truncLen=0), but in other cases it could be adjusted e.g., truncLen=c(220,160),
+
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=0,
+                     maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
+                     compress=TRUE, multithread=TRUE) # On Windows set multithread=FALSE
+head(out)
+```
+
+# Learn Error rate and correction
+```{r errorcorrection, tidy=TRUE, tidy.opts=list(arrow=TRUE, indent=2), echo=TRUE}
+#WARNING relatively slow part! (5min on my machine)
+errF <- learnErrors(filtFs, multithread=TRUE)
+errR <- learnErrors(filtRs, multithread=TRUE)
+
+plotErrors(errF, nominalQ=TRUE)
+plotErrors(errR, nominalQ=TRUE)
+
+#The error rates for each possible transition (A→C, A→G, …) are shown. Points are the observed error rates for each consensus quality score. The black line shows the estimated error rates after convergence of the machine-learning algorithm. The red line shows the error rates expected under the nominal definition of the Q-score. Here the estimated error rates (black line) are a good fit to the observed rates (points), and the error rates drop with increased quality as expected. Everything looks reasonable and we proceed with confidence.
+
+
+#We are now ready to apply the core sample DADA2 inference algorithm to the filtered and trimmed sequence data.
+dadaFs <- dada(filtFs, err=errF, multithread=TRUE, pool="pseudo")
+dadaRs <- dada(filtRs, err=errR, multithread=TRUE, pool="pseudo")
+dadaFs[[1]]
+
+#additional information: By default, the dada function processes each sample independently. However, pooling information across samples can increase sensitivity to sequence variants that may be present at very low frequencies in multiple samples. The dada2 package offers two types of pooling. dada(..., pool=TRUE) performs standard pooled processing, in which all samples are pooled together for sample inference. dada(..., pool="pseudo") performs pseudo-pooling, in which samples are processed independently after sharing information between samples, approximating pooled sample inference in linear time. see explanation here: https://benjjneb.github.io/dada2/pseudo.html
+ 
+```
+
+# Merging the reads
+```{r mergereads, tidy=TRUE, tidy.opts=list(arrow=TRUE, indent=2), echo=TRUE}
+
+#Now we merge the reads Forward+Reverse into a single amplicon sequence 
+mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
+
+# Inspect the merger data.frame from the first sample
+head(mergers[[1]])
+
+#write Fasta files of merged sequences
+for(nm in names(mergers)) {
+  mrg <- mergers[[nm]]
+  if(nrow(mrg) > 0) {
+    uniquesToFasta(mrg, paste0("merged_", nm, ".fasta"))
+  }
+}
+```
+
+# Construct sequence table
+```{r sequencetable, tidy=TRUE, tidy.opts=list(arrow=TRUE, indent=2), echo=TRUE}
+
+# We make a table of counts for all sequences merged
+seqtab <- makeSequenceTable(mergers)
+dim(seqtab)
+
+# Inspect distribution of sequence lengths
+table(nchar(getSequences(seqtab)))
+
+#You can remove non-target-length sequences from your sequence table (eg. seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% 250:262]). This is analogous to “cutting a band” in-silico to get amplicons of the targeted length.
+
+#here we see that we have multiple peaks... not a good sign, anyway we cut around them
+seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% 450:481]
+```
+
+# Remove chimeras
+```{r removechimeras, tidy=TRUE, tidy.opts=list(arrow=TRUE, indent=2), echo=TRUE}
+
+#Chimeras are PCR artifact that must be identified and removed
+seqtab2.nochim <- removeBimeraDenovo(seqtab2, method="consensus", multithread=TRUE, verbose=TRUE)
+dim(seqtab2.nochim)
+sum(seqtab2.nochim)/sum(seqtab2)
+
+#We save the final table
+write.table(t(seqtab2.nochim), "seqtab-nochim.txt", sep="\t", row.names=TRUE, col.names=NA, quote=FALSE)
+
+```
+
+# Track reads through the pipeline
+```{r tracktable, tidy=TRUE, tidy.opts=list(arrow=TRUE, indent=2), echo=TRUE}
+
+getN <- function(x) sum(getUniques(x))
+track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab2.nochim))
+# If processing a single sample, remove the sapply calls: e.g. replace sapply(dadaFs, getN) with getN(dadaFs)
+
+colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
+rownames(track) <- sample.names
+head(track)
+
+#Looks good! We kept the majority of our raw reads, and there is no over-large drop associated with any single step.
+```
+
+
+# Assign taxonomy
+```{r assigntaxonomy, tidy=TRUE, tidy.opts=list(arrow=TRUE, indent=2), echo=TRUE}
+#warning slow part! 45min on my old laptop!!
+
+#We assign a taxon for each ASV using the Reference Silva database v138
+taxa <- assignTaxonomy(seqtab2.nochim, "~/Desktop/eDNAworkshop2024/silva_nr99_v138.1_wSpecies_train_set.fa.gz", multithread=TRUE)
+
+taxa.print <- taxa # Removing sequence rownames for display only
+rownames(taxa.print) <- NULL
+head(taxa.print)
+
+#once launched, go for a break
+
+
+#save taxonomy assignment
+write.table(t(taxa), "seqtab-taxa.txt", sep="\t", row.names=TRUE, col.names=NA, quote=FALSE)
+#get representative sequences in FASTA
+uniquesToFasta(seqtab2.nochim, fout='rep-seqs.fna', ids=colnames(seqtab2.nochim))
+
+#save RDS files for second part
+saveRDS(seqtab2.nochim, 'seqtab2.nochim.rds')
+saveRDS(taxa, 'taxa.rds')
+
+
+#End of Part I, you can move to Part II
+```
+
+
+
+# Session infos
+```{r}
+sessionInfo()
+```
+
+```{r}
+knitr::knit_exit()
+```
