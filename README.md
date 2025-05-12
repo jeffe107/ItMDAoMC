@@ -4,6 +4,8 @@
 
 Repository containing training material and presentations for the workshop [Metagenomics data analysis of mixed microbial communities](https://www.sib.swiss/training/course/20250507_MEMIC), which took place at the University of Fribourg 🇨🇭 on May 7th to 9th.
 
+* [Moodle page](https://moodle.unifr.ch/course/view.php?id=288715)
+
 ## Information about the workshop
 
 <p align="center">
