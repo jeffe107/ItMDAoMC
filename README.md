@@ -5,6 +5,7 @@ Repository containing training material and presentations for the workshop [Meta
 * [Moodle page](https://moodle.unifr.ch/course/view.php?id=288715). Password: SIB_Metagenomics25
 
 * Required supplementary data:
+  
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15389348.svg)](https://doi.org/10.5281/zenodo.15389348)
 
 ## Information about the workshop
